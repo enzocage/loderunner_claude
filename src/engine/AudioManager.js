@@ -5,6 +5,8 @@ export default class AudioManager {
     this._muted = false;
     this._bgmSource = null;
     this._bgmGain = null;
+    this._musicVol = 0.5;
+    this._sfxVol   = 0.7;
   }
 
   init() {
@@ -21,8 +23,17 @@ export default class AudioManager {
 
   toggleMute() {
     this._muted = !this._muted;
-    if (this._master) this._master.gain.value = this._muted ? 0 : 0.5;
+    if (this._master) this._master.gain.value = this._muted ? 0 : this._musicVol;
     return this._muted;
+  }
+
+  setMusicVol(v) {
+    this._musicVol = Math.max(0, Math.min(1, v));
+    if (this._master && !this._muted) this._master.gain.value = this._musicVol;
+  }
+
+  setSfxVol(v) {
+    this._sfxVol = Math.max(0, Math.min(1, v));
   }
 
   // Synthesised sound effects
@@ -32,13 +43,14 @@ export default class AudioManager {
     const vol = options.volume ?? 1;
     const pitch = options.pitch ?? 1;
     switch (name) {
-      case 'dig':      this._playDig(vol, pitch); break;
-      case 'collect':  this._playCollect(vol, pitch); break;
-      case 'fall':     this._playFall(vol, pitch); break;
-      case 'death':    this._playDeath(vol); break;
-      case 'complete': this._playComplete(vol); break;
-      case 'trap':     this._playTrap(vol); break;
-      case 'walk':     this._playWalk(vol, pitch); break;
+      case 'dig':      this._playDig(vol * this._sfxVol, pitch); break;
+      case 'collect':  this._playCollect(vol * this._sfxVol, pitch); break;
+      case 'fall':     this._playFall(vol * this._sfxVol, pitch); break;
+      case 'death':    this._playDeath(vol * this._sfxVol); break;
+      case 'complete': this._playComplete(vol * this._sfxVol); break;
+      case 'trap':     this._playTrap(vol * this._sfxVol); break;
+      case 'walk':     this._playWalk(vol * this._sfxVol, pitch); break;
+      case 'powerup':  this._playPowerUp(vol * this._sfxVol); break;
     }
   }
 
@@ -136,6 +148,16 @@ export default class AudioManager {
 
   _playWalk(vol, pitch) {
     this._osc('square', 80 * pitch, 0.03, vol * 0.15);
+  }
+
+  _playPowerUp(vol) {
+    const notes = [440, 660, 880, 1320];
+    notes.forEach((f, i) => {
+      setTimeout(() => {
+        if (!this._ctx) return;
+        this._osc('sine', f, 0.1, vol * 0.6);
+      }, i * 60);
+    });
   }
 
   startBGM() {

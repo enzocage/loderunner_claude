@@ -42,7 +42,17 @@ export default class Transitions {
     }
   }
 
+  // Alias for drawing onto a plain 2D ctx (game canvas or legacy crt canvas)
+  renderOnCtx(ctx, w = CANVAS_W, h = CANVAS_H) {
+    this._renderImpl(ctx, w, h);
+  }
+
   render(ctx) {
+    if (!this._active) return;
+    this._renderImpl(ctx, CANVAS_W, CANVAS_H);
+  }
+
+  _renderImpl(ctx, w, h) {
     if (!this._active) return;
     const t = this._frame / this._frames;
 
@@ -50,29 +60,28 @@ export default class Transitions {
       case 'flash': {
         const alpha = t < 0.5 ? t * 2 : (1 - t) * 2;
         ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.fillRect(0, 0, w, h);
         break;
       }
       case 'dissolve': {
-        // Fast pixel scatter effect
         const pct = Math.min(1, t * 2);
         ctx.fillStyle = '#000';
-        const count = (CANVAS_W * CANVAS_H * pct / 16) | 0;
+        const count = (w * h * pct / 16) | 0;
         for (let i = 0; i < count; i++) {
-          const px = (Math.random() * CANVAS_W | 0) & ~1;
-          const py = (Math.random() * CANVAS_H | 0) & ~1;
+          const px = (Math.random() * w | 0) & ~1;
+          const py = (Math.random() * h | 0) & ~1;
           ctx.fillRect(px, py, 4, 4);
         }
         if (t > 0.9) {
           ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+          ctx.fillRect(0, 0, w, h);
         }
         break;
       }
       case 'wipe': {
-        const h = CANVAS_H * t;
+        const wh = h * t;
         ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, CANVAS_W, h);
+        ctx.fillRect(0, 0, w, wh);
         break;
       }
     }

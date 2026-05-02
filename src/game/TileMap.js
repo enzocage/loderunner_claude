@@ -1,4 +1,4 @@
-import { TILE, COLS, ROWS, TILE_SIZE, HOLE_OPEN_FRAMES, HOLE_CLOSE_FRAMES } from '../constants.js';
+import { TILE, COLS, ROWS, TILE_SIZE, HOLE_OPEN_FRAMES, HOLE_CLOSE_FRAMES, POWERUP } from '../constants.js';
 
 export default class TileMap {
   constructor(data) {
@@ -28,6 +28,12 @@ export default class TileMap {
   isLadder(tx, ty)    { return this.get(tx, ty) === TILE.LADDER; }
   isRope(tx, ty)      { return this.get(tx, ty) === TILE.ROPE; }
   isHole(tx, ty)      { return this.get(tx, ty) === TILE.HOLE; }
+
+  isPowerUp(tx, ty) {
+    const t = this.get(tx, ty);
+    return t === TILE.POWER_SPEED || t === TILE.POWER_DIG || t === TILE.POWER_FREEZE;
+  }
+
   isPassable(tx, ty) {
     const t = this.get(tx, ty);
     return t !== TILE.BRICK && t !== TILE.CONCRETE && t !== TILE.TRAP_BRICK;
@@ -49,9 +55,18 @@ export default class TileMap {
     return null;
   }
 
+  // Collect a power-up tile, clearing it from the map, returns type or -1
+  collectPowerUp(tx, ty) {
+    const t = this.get(tx, ty);
+    if (!this.isPowerUp(tx, ty)) return -1;
+    this.set(tx, ty, TILE.EMPTY);
+    return t;
+  }
+
   // Dig a BRICK tile, starting the hole timer
   startDig(tx, ty) {
-    if (this.get(tx, ty) !== TILE.BRICK) return false;
+    const t = this.get(tx, ty);
+    if (t !== TILE.BRICK && t !== TILE.CONCRETE) return false;
     const key = `${tx},${ty}`;
     if (this._holes.has(key)) return false;
     this._holes.set(key, { tx, ty, timer: 0, state: 'opening', anim: 0 });

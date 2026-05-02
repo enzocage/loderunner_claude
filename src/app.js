@@ -1,4 +1,4 @@
-import { STATE, CANVAS_W, CANVAS_H } from './constants.js';
+import { STATE, CANVAS_W, CANVAS_H, DEFAULT_SETTINGS } from './constants.js';
 import GameLoop      from './engine/GameLoop.js';
 import Renderer      from './engine/Renderer.js';
 import InputManager  from './engine/InputManager.js';
@@ -17,11 +17,19 @@ const LEVEL_URLS = [
   'src/levels/level3.json',
 ];
 
+const SETTINGS_KEY = 'loderunner_settings';
+
+const CRT_PRESETS  = ['amber', 'green', 'cold', 'off'];
+const LIVES_VALUES = [3, 5, 7];
+
 export default class App {
   constructor() {
     this._state = STATE.LOADING;
     this._prevState = null;
     this._frameCount = 0;
+
+    // Load settings from localStorage
+    this._settings = this._loadSettings();
 
     // Canvas
     this._gameCanvas = document.getElementById('game-canvas');
@@ -46,8 +54,12 @@ export default class App {
     this._currentLevel = 1;
     this._totalLevels  = LEVEL_URLS.length;
 
-    // Controls screen flag
+    // UI state flags
     this._showControls = false;
+    this._settingsIdx  = 0; // selected setting row
+
+    // Apply loaded settings
+    this._applySettings();
 
     this._loop = new GameLoop(
       (dt) => this._update(dt),
@@ -59,6 +71,33 @@ export default class App {
     this._setupWindowEvents();
   }
 
+  // ── Settings ────────────────────────────────────────────────────────────────
+
+  _loadSettings() {
+    try {
+      const saved = localStorage.getItem(SETTINGS_KEY);
+      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_SETTINGS };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  _saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this._settings));
+    } catch {}
+  }
+
+  _applySettings() {
+    this._audio.setMusicVol?.(this._settings.musicVol);
+    this._audio.setSfxVol?.(this._settings.sfxVol);
+    this._renderer.crtEnabled = this._settings.crtPreset !== 'off';
+    this._renderer.setCrtPreset(this._settings.crtPreset);
+    this._game.lives = this._settings.lives;
+  }
+
+  // ── Game setup ──────────────────────────────────────────────────────────────
+
   _setupGame() {
     this._game.setLevels(LEVEL_URLS);
 
@@ -66,7 +105,6 @@ export default class App {
       this._pendingScore = score;
       this._currentLevel++;
       if (this._currentLevel > this._totalLevels) {
-        // All levels done – game complete
         this._setState(STATE.GAME_OVER);
       } else {
         this._trans.dissolve(40, () => {
@@ -86,6 +124,7 @@ export default class App {
         case 0: // Start game
           this._audio.init();
           this._currentLevel = 1;
+          this._game.lives = this._settings.lives;
           this._trans.wipe(25, async () => {
             await this._game.startLevel(1);
             this._setState(STATE.PLAYING);
@@ -101,7 +140,11 @@ export default class App {
           break;
         case 3: // Controls
           this._showControls = true;
-          this._setState(STATE.HIGH_SCORES); // reuse screen slot
+          this._setState(STATE.HIGH_SCORES);
+          break;
+        case 4: // Settings
+          this._settingsIdx = 0;
+          this._setState(STATE.SETTINGS);
           break;
       }
     };
@@ -136,12 +179,9 @@ export default class App {
   _setState(s) {
     this._prevState = this._state;
     this._state = s;
-
-    // Show/hide editor sidebar
     const sidebar = document.getElementById('editor-sidebar');
     if (s === STATE.EDITOR) {
       sidebar.classList.remove('hidden');
-      // Make canvas narrower for editor
       this._gameCanvas.style.cursor = 'crosshair';
     } else {
       sidebar.classList.add('hidden');
@@ -149,11 +189,12 @@ export default class App {
     }
   }
 
+  // ── Mobile controls ─────────────────────────────────────────────────────────
+
   _setupMobileControls() {
     const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
     if (!isTouchDevice) return;
     document.getElementById('mobile-controls')?.classList.remove('hidden');
-
     const map = {
       'btn-up':    'ArrowUp',
       'btn-down':  'ArrowDown',
@@ -170,11 +211,18 @@ export default class App {
     }
   }
 
+  // ── Window events ────────────────────────────────────────────────────────────
+
   _setupWindowEvents() {
     window.addEventListener('resize', () => Renderer.scaleToFit());
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyF2') {
-        this._renderer.crtEnabled = !this._renderer.crtEnabled;
+        // Cycle CRT preset
+        const idx = CRT_PRESETS.indexOf(this._settings.crtPreset);
+        this._settings.crtPreset = CRT_PRESETS[(idx + 1) % CRT_PRESETS.length];
+        this._renderer.crtEnabled = this._settings.crtPreset !== 'off';
+        this._renderer.setCrtPreset(this._settings.crtPreset);
+        this._saveSettings();
       }
       if (e.code === 'KeyM') {
         const m = this._audio.toggleMute();
@@ -184,11 +232,15 @@ export default class App {
     Renderer.scaleToFit();
   }
 
+  // ── Init ─────────────────────────────────────────────────────────────────────
+
   async init() {
     await this._assets.loadAll();
     this._setState(STATE.MENU);
     this._loop.start();
   }
+
+  // ── Update ────────────────────────────────────────────────────────────────────
 
   _update(dt) {
     this._frameCount++;
@@ -223,7 +275,6 @@ export default class App {
         break;
 
       case STATE.LEVEL_CLEAR:
-        // Handled via callback
         break;
 
       case STATE.GAME_OVER:
@@ -252,6 +303,10 @@ export default class App {
         }
         break;
 
+      case STATE.SETTINGS:
+        this._updateSettings();
+        break;
+
       case STATE.EDITOR:
         if (this._editor) this._editor.update();
         break;
@@ -259,6 +314,56 @@ export default class App {
 
     this._input.flush();
   }
+
+  _updateSettings() {
+    const ROWS = 4; // number of adjustable settings
+    if (this._input.isPressed('ArrowUp') || this._input.isPressed('KeyW')) {
+      this._settingsIdx = (this._settingsIdx - 1 + ROWS) % ROWS;
+    }
+    if (this._input.isPressed('ArrowDown') || this._input.isPressed('KeyS')) {
+      this._settingsIdx = (this._settingsIdx + 1) % ROWS;
+    }
+
+    const change = (this._input.isPressed('ArrowRight') || this._input.isPressed('KeyD')) ? 1
+                 : (this._input.isPressed('ArrowLeft')  || this._input.isPressed('KeyA')) ? -1
+                 : 0;
+
+    if (change !== 0) {
+      switch (this._settingsIdx) {
+        case 0: { // Music vol
+          this._settings.musicVol = Math.max(0, Math.min(1, this._settings.musicVol + change * 0.1));
+          this._audio.setMusicVol?.(this._settings.musicVol);
+          break;
+        }
+        case 1: { // SFX vol
+          this._settings.sfxVol = Math.max(0, Math.min(1, this._settings.sfxVol + change * 0.1));
+          this._audio.setSfxVol?.(this._settings.sfxVol);
+          break;
+        }
+        case 2: { // CRT preset
+          const idx = CRT_PRESETS.indexOf(this._settings.crtPreset);
+          this._settings.crtPreset = CRT_PRESETS[(idx + change + CRT_PRESETS.length) % CRT_PRESETS.length];
+          this._renderer.crtEnabled = this._settings.crtPreset !== 'off';
+          this._renderer.setCrtPreset(this._settings.crtPreset);
+          break;
+        }
+        case 3: { // Lives
+          const idx = LIVES_VALUES.indexOf(this._settings.lives);
+          const ni = Math.max(0, Math.min(LIVES_VALUES.length - 1, (idx < 0 ? 1 : idx) + change));
+          this._settings.lives = LIVES_VALUES[ni];
+          break;
+        }
+      }
+      this._saveSettings();
+    }
+
+    if (this._input.isPressed('Escape') || this._input.isPressed('KeyZ') ||
+        this._input.isPressed('Enter')) {
+      this._setState(STATE.MENU);
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   _render(alpha) {
     const ctx = this._renderer.gCtx;
@@ -281,20 +386,26 @@ export default class App {
         } else {
           this._menu.render();
         }
+        if (this._trans.isActive) {
+          this._renderer.overlayAndFlush(
+            (ctx) => this._trans.renderOnCtx(ctx, CANVAS_W, CANVAS_H)
+          );
+        }
         break;
 
       case STATE.PLAYING:
       case STATE.LEVEL_CLEAR:
-        this._game.render(alpha);
-        // Draw transition overlay directly on the CRT output (after game.render endFrame)
-        if (this._trans.isActive) {
-          this._trans.render(this._renderer.cCtx);
-        }
+        this._game.render(alpha, this._trans.isActive
+          ? (ctx) => this._trans.renderOnCtx(ctx, CANVAS_W, CANVAS_H)
+          : null
+        );
         break;
 
       case STATE.PAUSED:
-        this._game.render(alpha);
-        this._renderPauseOverlay();   // draws directly on cCtx after game.render
+        this._game.render(alpha, (ctx) => {
+          this._renderPauseOverlay(ctx);
+          if (this._trans.isActive) this._trans.renderOnCtx(ctx, CANVAS_W, CANVAS_H);
+        });
         break;
 
       case STATE.GAME_OVER:
@@ -307,20 +418,18 @@ export default class App {
         this._renderer.endFrame();
         break;
 
+      case STATE.SETTINGS:
+        this._renderSettings();
+        break;
+
       case STATE.EDITOR:
         if (this._editor) this._editor.render();
         break;
     }
 
-    // Global transition overlay for non-playing states (wipe/dissolve between screens)
-    if (this._trans.isActive && this._state !== STATE.PLAYING && this._state !== STATE.LEVEL_CLEAR) {
-      this._trans.render(this._renderer.cCtx);
-    }
   }
 
-  _renderPauseOverlay() {
-    // Draw directly on the CRT output canvas (game.render already ran endFrame)
-    const ctx = this._renderer.cCtx;
+  _renderPauseOverlay(ctx) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     ctx.font = '14px "Press Start 2P", monospace';
@@ -350,7 +459,6 @@ export default class App {
     ctx.fillText(`SCORE: ${String(this._pendingScore).padStart(8,'0')}`, CANVAS_W / 2, CANVAS_H / 2 + 10);
 
     if (this._scores.isEnteringName) {
-      // Render name entry on gCtx BEFORE endFrame so it goes through CRT
       this._scores.renderNameEntry(ctx);
     } else {
       ctx.font = '6px "Press Start 2P", monospace';
@@ -366,44 +474,103 @@ export default class App {
     const ctx = this._renderer.gCtx;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
     ctx.font = '10px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd700';
     ctx.fillText('CONTROLS', CANVAS_W / 2, 30);
-
     const lines = [
       ['MOVE',       '← → ↑ ↓  /  W A S D'],
       ['DIG LEFT',   'Z  or  ,'],
       ['DIG RIGHT',  'X  or  .'],
       ['PAUSE',      'P  or  ESC'],
-      ['TOGGLE CRT', 'F2'],
+      ['CRT CYCLE',  'F2'],
       ['MUTE',       'M'],
       ['',''],
-      ['GOAL','COLLECT ALL GOLD THEN'],
-      ['',    'REACH THE EXIT LADDER'],
+      ['GOAL',    'COLLECT ALL GOLD THEN'],
+      ['',        'REACH THE EXIT LADDER'],
       ['',''],
-      ['ENEMIES','TRAP THEM IN HOLES'],
-      ['',       'TO EARN BONUS POINTS'],
+      ['ENEMIES', 'TRAP THEM IN HOLES'],
+      ['',        'TO EARN BONUS POINTS'],
+      ['',''],
+      ['POWER-UPS', 'BLUE=SPEED  GREEN=DIG'],
+      ['',          'RED=FREEZE ENEMIES'],
     ];
-
     ctx.font = '6px "Press Start 2P", monospace';
-    let y = 60;
+    let y = 55;
     for (const [lbl, val] of lines) {
-      if (!lbl && !val) { y += 8; continue; }
+      if (!lbl && !val) { y += 7; continue; }
       ctx.fillStyle = '#67b6bd';
       ctx.textAlign = 'right';
       ctx.fillText(lbl, CANVAS_W / 2 - 10, y);
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'left';
       ctx.fillText(val, CANVAS_W / 2 + 10, y);
-      y += 16;
+      y += 15;
     }
-
     ctx.textAlign = 'center';
     ctx.fillStyle = '#555';
     ctx.fillText('PRESS ANY KEY TO GO BACK', CANVAS_W / 2, CANVAS_H - 20);
     ctx.textAlign = 'left';
     this._renderer.endFrame();
+  }
+
+  _renderSettings() {
+    this._renderer.beginFrame();
+    const ctx = this._renderer.gCtx;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('SETTINGS', CANVAS_W / 2, 35);
+
+    const rows = [
+      { label: 'MUSIC VOL',  value: Math.round(this._settings.musicVol * 10) + '/10' },
+      { label: 'SFX VOL',    value: Math.round(this._settings.sfxVol   * 10) + '/10' },
+      { label: 'CRT MODE',   value: this._settings.crtPreset.toUpperCase() },
+      { label: 'LIVES',      value: String(this._settings.lives) },
+    ];
+
+    ctx.font = '7px "Press Start 2P", monospace';
+    let y = 80;
+    for (let i = 0; i < rows.length; i++) {
+      const sel = i === this._settingsIdx;
+      if (sel) {
+        ctx.fillStyle = 'rgba(255,215,0,0.12)';
+        ctx.fillRect(CANVAS_W / 2 - 120, y - 8, 240, 18);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText('◄', CANVAS_W / 2 - 108, y + 2);
+        ctx.fillText('►', CANVAS_W / 2 + 100, y + 2);
+      } else {
+        ctx.fillStyle = '#888';
+      }
+      ctx.fillStyle = sel ? '#fff' : '#888';
+      ctx.textAlign = 'right';
+      ctx.fillText(rows[i].label, CANVAS_W / 2 - 12, y + 2);
+      ctx.fillStyle = sel ? '#ffd700' : '#aaa';
+      ctx.textAlign = 'left';
+      ctx.fillText(rows[i].value, CANVAS_W / 2 + 12, y + 2);
+      y += 32;
+    }
+
+    // Volume bars
+    this._drawVolBar(ctx, CANVAS_W / 2 + 12, 82, this._settings.musicVol);
+    this._drawVolBar(ctx, CANVAS_W / 2 + 12, 114, this._settings.sfxVol);
+
+    ctx.textAlign = 'center';
+    ctx.font = '6px "Press Start 2P", monospace';
+    ctx.fillStyle = '#555';
+    ctx.fillText('← → CHANGE   ESC BACK', CANVAS_W / 2, CANVAS_H - 20);
+    ctx.textAlign = 'left';
+    this._renderer.endFrame();
+  }
+
+  _drawVolBar(ctx, x, y, val) {
+    const w = 80, h = 6;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x + 30, y + 4, w, h);
+    ctx.fillStyle = '#4488ff';
+    ctx.fillRect(x + 30, y + 4, Math.round(w * val), h);
   }
 }
