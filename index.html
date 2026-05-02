@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LODE RUNNER</title>
+<link rel="stylesheet" href="style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="root">
+  <div id="screen-wrap">
+    <canvas id="game-canvas" width="560" height="400"></canvas>
+    <canvas id="crt-canvas"  width="560" height="400"></canvas>
+    <!-- Editor sidebar (shown only in editor mode) -->
+    <div id="editor-sidebar" class="hidden">
+      <div class="sidebar-title">TILE PALETTE</div>
+      <div id="palette-tiles"></div>
+      <div class="sidebar-sep"></div>
+      <button class="sidebar-btn" id="btn-save">SAVE JSON</button>
+      <button class="sidebar-btn" id="btn-load">LOAD JSON</button>
+      <input type="file" id="file-input" accept=".json" style="display:none">
+      <button class="sidebar-btn" id="btn-test">PLAY TEST</button>
+      <button class="sidebar-btn" id="btn-clear">CLEAR ALL</button>
+      <button class="sidebar-btn" id="btn-back">← MENU</button>
+      <div class="sidebar-sep"></div>
+      <div class="sidebar-hint">LEFT CLICK: place<br>RIGHT CLICK: erase<br>DRAG: paint</div>
+    </div>
+    <!-- Mobile controls -->
+    <div id="mobile-controls" class="hidden">
+      <div id="dpad">
+        <button class="dpad-btn" id="btn-up">▲</button>
+        <div class="dpad-row">
+          <button class="dpad-btn" id="btn-left">◄</button>
+          <button class="dpad-btn" id="btn-center"></button>
+          <button class="dpad-btn" id="btn-right">►</button>
+        </div>
+        <button class="dpad-btn" id="btn-down">▼</button>
+      </div>
+      <div id="action-btns">
+        <button class="action-btn" id="btn-digl">DIG L</button>
+        <button class="action-btn" id="btn-digr">DIG R</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
